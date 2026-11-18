@@ -11,6 +11,7 @@ boot into a fix.
 | Reboots after 1-2 minutes | `netbpfload` failure, `/data` encryption failure, or a critical service crash-looping | boot logs on the cache partition, pstore |
 | Stays on the Mi logo | SurfaceFlinger or the composer never presents a frame | `adb logcat`, look for `composer`, `SurfaceFlinger`, `failed to parse command` |
 | Boot animation forever | system_server crash loop or watchdog | `adb logcat -b all`, look for `FATAL EXCEPTION IN SYSTEM PROCESS`, `Watchdog` |
+| UI freezes, then restarts; or a reboot every few minutes | A system_server thread is waiting for a service that does not exist, and the watchdog gives up after about 3 minutes | `adb pull /data/anr` and read `traces_SystemServer_WDT*`: the blocked thread's stack names the caller |
 
 ## Getting logs
 
@@ -65,6 +66,21 @@ boot into a fix.
 - **A system service waiting 5 s for an Oplus HAL** (`AServiceManager_getService`, `waitForService` on a
   `vendor.oplus.hardware.*` name in the ANR trace): if the caller copes with empty results, add the name to
   `device/common/init/00-port-oplus-stubs.rc`. Do not stub interfaces that return arrays or structures.
+- **A wait that never ends** (watchdog trace with `waitForService` or `waitForDeclaredService` at the top
+  of a system_server thread). Three ways out, in this order: if the HAL is only *declared* on the system
+  side (`/system/etc/vintf/manifest.xml`) and nothing serves it, add its name to
+  `device/common/absent_hals.py`; if a native library calls `AServiceManager_waitForService` and handles
+  a null result, swap the import with `tools/elf_swap_import.py` as `port.sh` does for
+  `libupdateprof.qti.so`; otherwise remove the ColorOS feature that leads to the call.
+- **The picture freezes but adb still answers.** SurfaceFlinger's main thread is blocked.
+  `adb shell debuggerd -b $(adb shell pidof surfaceflinger)` prints its stacks; a frame in
+  `AServiceManager_waitForService` means a wait `tools/patch_sf_waits.py` did not redirect (it handles
+  calls that are followed by a typed `fromBinder` conversion and reports what it did during the build).
+- **Screen lock cannot be set** ("Screen lock was already changed. Try again with the new screen lock.")
+  after a flash that left `frp` in place: `fastboot erase frp`, then reboot. Data stays.
+- **Sluggish or stuttering UI.** Check that the schedtune groups exist and are used:
+  `adb shell cat /dev/stune/top-app/tasks | wc -l` should be non-zero with an app in front, and
+  `adb logcat -b all | grep -i 'task profile\|cgroup'` should not report missing controllers.
 
 ## Changing something on the phone before rebuilding
 

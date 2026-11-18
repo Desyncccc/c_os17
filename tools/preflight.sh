@@ -16,6 +16,10 @@ ok()   { echo "  ok    $*"; }
 bad()  { echo "  FAIL  $*"; fail=1; }
 check() { local desc=$1; shift; if "$@" > "$WORK/pf.log" 2>&1; then ok "$desc"; else bad "$desc"; sed 's/^/        /' "$WORK/pf.log" | tail -6; fi; }
 lab()  { getfattr -h -n security.selinux --only-values --absolute-names "$1" 2>/dev/null | tr -d '\0'; }
+# out_has <extended regex> <command...>: does the command's output match? The output is collected first:
+# `command | grep -q` closes the pipe at the first match, and under pipefail a writer that is still writing
+# then turns the match into a failure.
+out_has() { local pat=$1 o; shift; o=$("$@" 2>/dev/null) || true; grep -Eq -- "$pat" <<< "$o"; }
 
 PR=$WORK/mnt/prt
 cleanup() { for d in "$PR" "$PS" "$PV" "$PO"; do mountpoint -q "$d" && umount "$d"; done; rm -f "$WORK/pf.log" "$WORK/pf-runtime.img"; }
@@ -82,13 +86,13 @@ gzip -dc "$b/ramdisk" > "$b/rd.cpio" && $PY "$T/cpio_edit.py" get "$b/rd.cpio" s
 cmp -s "$b/fstab" "$PV/etc/fstab.qcom" && ok "ramdisk fstab and vendor fstab are identical" || bad "ramdisk fstab differs from the vendor fstab"
 sysl=$(awk '!/^#/ && $2=="/system" {print $3}' "$b/fstab" | tr '\n' ' ')
 [ "$sysl" = "erofs ext4 " ] && ok "/system: erofs entry first, ext4 fallback kept" || bad "/system entries: $sysl"
-awk '!/^#/ && $2=="/system" && $3=="erofs"' "$b/fstab" | grep -q 'logical,first_stage_mount' && ok "/system erofs entry is logical + first_stage_mount" || bad "/system erofs entry flags"
-for p in vendor odm; do awk -v p="/$p" '!/^#/ && $2==p && $3=="erofs"' "$b/fstab" | grep -q first_stage_mount && ok "/$p is mounted as erofs in the first stage" || bad "/$p fstab entry"; done
+out_has 'logical,first_stage_mount' awk '!/^#/ && $2=="/system" && $3=="erofs"' "$b/fstab" && ok "/system erofs entry is logical + first_stage_mount" || bad "/system erofs entry flags"
+for p in vendor odm; do out_has first_stage_mount awk -v p="/$p" '!/^#/ && $2==p && $3=="erofs"' "$b/fstab" && ok "/$p is mounted as erofs in the first stage" || bad "/$p fstab entry"; done
 if [ "${FBE_MODE:-standard}" = standard ]; then
   d=$(awk '!/^#/ && $2=="/data"' "$b/fstab")
-  echo "$d" | grep -q 'fileencryption=aes-256-xts:aes-256-cts:v2,' && ! echo "$d" | grep -Eq 'wrappedkey|inlinecrypt|metadata_encryption|keydirectory' \
+  grep -q 'fileencryption=aes-256-xts:aes-256-cts:v2,' <<< "$d" && ! grep -Eq 'wrappedkey|inlinecrypt|metadata_encryption|keydirectory' <<< "$d" \
     && ok "/data: standard file-based encryption, no wrapped keys, no metadata encryption" || bad "/data encryption options: $d"
-  echo "$d" | grep -q 'formattable' && ok "/data is formattable (a blank userdata is formatted on first boot)" || bad "/data not formattable"
+  grep -q 'formattable' <<< "$d" && ok "/data is formattable (a blank userdata is formatted on first boot)" || bad "/data not formattable"
 fi
 for mp in $(awk '!/^#/ && NF>=5 && $2 ~ /^\/(system_ext|product)$/ {print $2}' "$b/fstab"); do
   grep -qx "$mp" "$PS/system_ext/etc/init/config/skip_mount.cfg" && ok "$mp (not in this super) is skipped by the GSI's skip_mount.cfg" || bad "$mp is in the fstab but not skipped"
@@ -99,7 +103,7 @@ rm -rf "$b"
 echo "-- eBPF loader override (Android 17 network stack on the 4.14 kernel)"
 rc=$PS/system/etc/init/00-port-netbpfload.rc
 [ "$(grep -c '^    mount none ' "$rc")" = 9 ] && ok "9 bind mounts in 00-port-netbpfload.rc" || bad "bind mount count in $rc"
-first=$(cd "$PS/system/etc/init" && ls | LC_ALL=C sort | grep -n -x -e 00-port-netbpfload.rc -e netbpfload.rc | head -1 | cut -d: -f2)
+first=$(cd "$PS/system/etc/init" && ls | LC_ALL=C sort | grep -n -x -e 00-port-netbpfload.rc -e netbpfload.rc | awk -F: 'NR == 1 { print $2 }')
 [ "$first" = 00-port-netbpfload.rc ] && ok "the override rc is parsed before netbpfload.rc" || bad "rc ordering"
 while read -r _ _ src dst _; do
   [ -e "$PS$src" ] || bad "bind source $src missing"
@@ -127,7 +131,7 @@ grep -q '^(type su)' "$PS/system/etc/selinux/plat_sepolicy.cil" && ok "su domain
 if [ "${IMS:-base}" = base ]; then
   echo "-- IMS app (VoLTE): the base ROM's app, patched, in place of ColorOS's"
   ia=$PS/system_ext/priv-app/ims
-  $PY "$T/apk_sigblock.py" info "$ia/ims.apk" 2>/dev/null | grep -q "'v2', 'v3'" && zipalign -c 4 "$ia/ims.apk" >/dev/null 2>&1 \
+  out_has "'v2', 'v3'" $PY "$T/apk_sigblock.py" info "$ia/ims.apk" && zipalign -c 4 "$ia/ims.apk" >/dev/null 2>&1 \
     && ok "ims.apk carries a v2/v3 signing block and is 4-byte aligned" || bad "ims.apk signing block or alignment"
   [ "$(aapt2 dump packagename "$ia/ims.apk" 2>/dev/null)" = org.codeaurora.ims ] && ok "ims.apk parses as org.codeaurora.ims" || bad "ims.apk does not parse"
   python3 -I -c "
@@ -176,6 +180,83 @@ sys.exit(1 if bad else 0)
 PY
 fi
 
+echo "-- services the vendor image does not have: nothing may wait for them without a timeout"
+m=$PS/system/etc/vintf/manifest.xml
+for h in vendor.oplus.hardware.oplusSensor vendor.oplus.hardware.urcc vendor.oplus.hardware.hummingbird; do
+  if grep -rqs "<name>$h</name>" "$PV/etc/vintf" "$PO/etc/vintf"; then ok "$h is served by the vendor image"
+  elif grep -q "<name>$h</name>" "$m"; then bad "$h is declared in the framework manifest but nothing serves it"
+  else ok "$h: not declared, so clients skip it instead of waiting"; fi
+done
+u=$PS/system_ext/lib64/libupdateprof.qti.so
+check "libupdateprof.qti.so: the original with one import swapped (waitForService -> checkService)" $PY "$T/elf_swap_import.py" verify \
+  "$H/libupdateprof.orig" "$u" AServiceManager_waitForService AServiceManager_checkService LIBBINDER_NDK
+out_has ' AServiceManager_checkService@@LIBBINDER_NDK$' readelf --dyn-syms -W "$PS/system/lib64/libbinder_ndk.so" \
+  && ! out_has 'waitForService' readelf --dyn-syms -W "$u" && [ "$(lab "$u")" = "$(lab "$PS/system_ext/lib64/libtrigger-handler.so")" ] \
+  && ok "ColorOS's libbinder_ndk.so exports the lookup the library now imports; label unchanged" || bad "libupdateprof.qti.so import or label"
+f=$PS/system/bin/surfaceflinger
+if $PY "$T/patch_sf_waits.py" verify "$H/surfaceflinger.orig" "$f" \
+     "$PS/system/etc/vintf" "$PS/system_ext/etc/vintf" "$PS/product/etc/vintf" "$PV/etc/vintf" "$PO/etc/vintf" > "$WORK/pf.log" 2>&1; then
+  ok "surfaceflinger: the original with $(cut -d: -f1 "$WORK/pf.log") to the non-blocking lookup, nothing else changed"
+  sed 's/^[^:]*: //; s/; /\n/g' "$WORK/pf.log" | sort | uniq -c | sed 's/^ *\([0-9]*\) /        \1x /'
+else
+  bad "surfaceflinger wait redirection"; sed 's/^/        /' "$WORK/pf.log" | tail -4
+fi
+[ "$(lab "$f")" = "u:object_r:surfaceflinger_exec:s0" ] && [ -x "$f" ] && ok "surfaceflinger keeps its label and mode" || bad "surfaceflinger label/mode: $(lab "$f")"
+! grep -qsx 'ro.vendor.qspm.enable=true' "$PV/build.prop" "$PV/default.prop" "$PO/etc/build.prop" "$PS/system/build.prop" "$PS"/*/build.prop "$PS"/*/etc/build.prop \
+  && ok "ro.vendor.qspm.enable is not set: libtrigger-handler.so stays off" || bad "ro.vendor.qspm.enable=true without a QSPM HAL"
+! grep -q 'oplus.gpu.controlpanel.support' "$PS"/my_product/etc/permissions/*.xml && ok "GPU control panel feature not declared" || bad "GPU control panel feature still declared"
+grep -qx 'ro.adb.secure=0' "$PS/system/build.prop" && ok "ro.adb.secure=0 (with 1, system_server waits for the Oplus engineer HAL)" || bad "ro.adb.secure is not 0"
+
+echo "-- scheduler groups (schedtune on the 4.14 kernel)"
+if $PY - "$PS" "$PV" > "$WORK/pf.log" 2>&1 <<'PY'
+import json, re, sys
+from pathlib import Path
+s, v = Path(sys.argv[1]), Path(sys.argv[2])
+levels = {re.search(r"^ro\.product\.first_api_level=(\d+)$", (p / "build.prop").read_text(errors="replace"), re.M).group(1)
+          for p in (v, s / "my_manifest")}
+main_cg = json.loads((s / "system/etc/cgroups.json").read_text())
+main_tp = json.loads((s / "system/etc/task_profiles.json").read_text())
+rc = (s / "system/etc/init/00-port-stune.rc").read_text()
+assert rc.splitlines()[1] == "on init" and "\r" not in rc
+groups = set(re.findall(r"^    mkdir /dev/stune/(\S+)$", rc, re.M))
+for g in groups:
+    for f in ("tasks", "cgroup.procs"):
+        assert f"    chown system system /dev/stune/{g}/{f}\n" in rc and f"    chmod 0664 /dev/stune/{g}/{f}\n" in rc, (g, f)
+n_join = 0
+for api in sorted(levels):
+    cg = json.loads((s / f"system/etc/task_profiles/cgroups_{api}.json").read_text())
+    assert [(c["Controller"], c["Path"]) for c in cg["Cgroups"]] == [("schedtune", "/dev/stune")], cg
+    known = {c["Controller"] for c in main_cg["Cgroups"]} | {"schedtune"} \
+        | {c["Controller"] for c in main_cg.get("Cgroups2", {}).get("Controllers", [])}
+    tp = json.loads((s / f"system/etc/task_profiles/task_profiles_{api}.json").read_text())
+    attrs = {a["Name"] for a in main_tp.get("Attributes", []) + tp.get("Attributes", [])}
+    assert all(a["Controller"] in known for a in tp.get("Attributes", []))
+    names = {p["Name"] for p in main_tp["Profiles"] + tp["Profiles"]}
+    for p in tp["Profiles"]:
+        for a in p["Actions"]:
+            prm = a.get("Params", {})
+            if a["Name"] == "JoinCgroup":
+                assert prm["Controller"] in known, (p["Name"], prm)
+                if prm["Controller"] == "schedtune":
+                    assert prm["Path"] in groups | {""}, (p["Name"], prm)
+                    n_join += 1
+            elif a["Name"] == "SetAttribute":
+                assert prm["Name"] in attrs, (p["Name"], prm)
+    for agg in tp.get("AggregateProfiles", []):
+        assert set(agg["Profiles"]) <= names, agg
+    assert n_join, "no profile joins a schedtune group"
+want = {"top-app", "foreground", "background"}
+assert want <= groups, groups
+print(f"API levels {','.join(sorted(levels))}: schedtune mounted at /dev/stune, groups {','.join(sorted(groups))}, profiles consistent")
+PY
+then ok "$(cat "$WORK/pf.log")"; else bad "scheduler group files"; sed 's/^/        /' "$WORK/pf.log" | tail -6; fi
+api=$(sed -n 's/^ro.product.first_api_level=//p' "$PV/build.prop")
+[ "$(lab "$PS/system/etc/task_profiles/cgroups_$api.json")" = "u:object_r:cgroup_desc_file:s0" ] \
+  && [ "$(lab "$PS/system/etc/task_profiles/task_profiles_$api.json")" = "u:object_r:task_profiles_file:s0" ] \
+  && [ "$(lab "$PS/system/etc/init/00-port-stune.rc")" = "u:object_r:system_file:s0" ] && ok "scheduler files carry the labels the policy gives those paths" || bad "scheduler file labels"
+grep -q '/etc/task_profiles/cgroups_%u.json' "$PS/system/lib64/libprocessgroup_setup.so" && grep -q '/etc/task_profiles/task_profiles_%u.json' "$PS/system/lib64/libprocessgroup.so" \
+  && ok "ColorOS's libprocessgroup reads API-level cgroup and task-profile files" || bad "libprocessgroup has no API-level file support"
+
 echo "-- display"
 c=$PV/bin/hw/android.hardware.graphics.composer@2.4-service
 d=$(cmp -l "$H/composer.orig" "$c" | wc -l)
@@ -183,7 +264,7 @@ d=$(cmp -l "$H/composer.orig" "$c" | wc -l)
   && ok "composer service: exactly one instruction changed to NOP (unknown commands are skipped)" || bad "composer patch ($d bytes differ)"
 [ "$(lab "$c")" = "$(lab "$WORK/vendor/bin/hw/android.hardware.graphics.composer@2.4-service")" ] && [ -x "$c" ] && ok "composer service keeps its label and mode" || bad "composer label/mode"
 for f in android_framework_res_overlay.display.product.24831.apk oplus_framework_res_overlay.display.product.24831.apk; do
-  jarsigner -verify "$PS/my_product/overlay/$f" 2>/dev/null | grep -q 'jar verified' && zipalign -c 4 "$PS/my_product/overlay/$f" >/dev/null 2>&1 \
+  out_has 'jar verified' jarsigner -verify "$PS/my_product/overlay/$f" && zipalign -c 4 "$PS/my_product/overlay/$f" >/dev/null 2>&1 \
     && ok "$f: signed and aligned" || bad "$f"
 done
 res=$(aapt2 dump resources "$PS/my_product/overlay/android_framework_res_overlay.display.product.24831.apk" 2>/dev/null)
@@ -198,12 +279,18 @@ grep -qx libcamera_metadata.so "$PS/system/etc/llndk.libraries.txt" && ok "libca
 [ ! -e "$PS/system_ext/etc/init/supersize.rc" ] && grep -qx 'ro.oplus.storage.super_size=6442450944' "$PS/system_ext/etc/build.prop" && ok "super size property fixed" || bad "super size"
 python3 -I -c "import sys, xml.dom.minidom as m; [m.parse(f) for f in sys.argv[1:]]" "$PS/my_product/etc/power_profile/power_profile.xml" \
   "$PS"/my_product/etc/extension/com.oplus.oplus-feature.xml "$PS"/my_product/etc/extension/com.oplus.app-features.xml \
-  "$PS"/my_product/etc/extension/feature_com.android.battery.xml "$PV/etc/vintf/manifest.xml" 2>/dev/null \
+  "$PS"/my_product/etc/extension/feature_com.android.battery.xml "$PV/etc/vintf/manifest.xml" \
+  "$PS/system/etc/vintf/manifest.xml" "$PS/my_product/etc/permissions/oplus.product.features_gameeco_common.xml" 2>/dev/null \
   && ok "edited XML files are well-formed" || bad "an edited XML file does not parse"
 if [ "${SOUNDTRIGGER:-remove}" = remove ]; then
-  ! grep -q 'android.hardware.soundtrigger' "$PV/etc/vintf/manifest.xml" && ! ls "$PV"/lib*/hw 2>/dev/null | grep -q 'soundtrigger@' \
+  ! grep -q 'android.hardware.soundtrigger' "$PV/etc/vintf/manifest.xml" && ! out_has 'soundtrigger@' ls "$PV"/lib*/hw \
     && ok "SoundTrigger HIDL adapter and manifest entry removed together" || bad "SoundTrigger removal incomplete"
 fi
+# Load order is system (+ my_* imports), system_ext, vendor, odm, product; the last definition wins.
+den=$(cat "$PS/system/build.prop" "$PS"/my_*/build.prop "$PS/system_ext/etc/build.prop" "$PV/build.prop" "$PO/etc/build.prop" "$PS/product/etc/build.prop" 2>/dev/null \
+      | sed -n 's/^ro.sf.lcd_density=//p' | tail -1)
+[ "$den" = "$(sed -n 's/^ro.oplus.density.fhd_default=//p' "$PS/my_product/build.prop")" ] && [ "$den" = 480 ] \
+  && ok "effective display density is 480, ColorOS's default for a 1080-wide panel (the vendor's 440 is overridden)" || bad "effective ro.sf.lcd_density is '$den'"
 $PY - "$PS" <<'PY' && ok "no property is defined twice within one edited build.prop" || bad "duplicate property introduced"
 import sys, collections
 from pathlib import Path

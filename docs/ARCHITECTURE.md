@@ -41,6 +41,9 @@ Facts read from the images (see `port.sh unpack` and the analysis that led to th
 | `/data` | ColorOS vold vs the base ROM's encryption setup | Plain AOSP file-based encryption (`aes-256-xts:aes-256-cts:v2`), no wrapped keys, no metadata encryption; installer erases `userdata` and `metadata` | preflight |
 | Audio HAL | Crash loop through the SoundTrigger callback took SurfaceFlinger and system_server down | SoundTrigger HIDL adapter and its manifest entry removed (`SOUNDTRIGGER=keep` to undo) | preflight |
 | First frame | ColorOS SurfaceFlinger sends QTI and Oplus composer commands the AOSP composer service rejects: stuck on the splash screen | One conditional branch in the composer service is replaced by a NOP so unknown commands are skipped (`tools/patch_composer.py`) | preflight: exactly four bytes differ from the original |
+| system_server start | Clients that find an Oplus HAL declared in the framework manifest wait for it; three declared HALs have no server on a non-Oplus vendor | The three declarations are removed unless the vendor serves them (`device/common/absent_hals.py`) | preflight |
+| Shortly after boot | A Qualcomm GPU-profile library waits for a vendor service with no timeout; on the Xiaomi Pad 6 port this froze the UI until the watchdog restarted it | The library imports the non-blocking lookup instead (`tools/elf_swap_import.py`); the feature that offers the control panel is removed | preflight: the file is the original with exactly that edit |
+| In use (colour mode, sharpness, Game Filter) | SurfaceFlinger's main thread waits for Oplus/Pixelworks display HALs with no timeout: frozen screen on the Pad 6 port | The waits for HALs no manifest declares call the non-blocking lookup (`tools/patch_sf_waits.py`) | preflight: the file is the original with only those `bl` instructions changed |
 
 ## System-side changes (`device/cepheus/adapt_system.py`, `port.sh system`)
 
@@ -59,11 +62,68 @@ Facts read from the images (see `port.sh unpack` and the analysis that led to th
 - Display overlays rebuilt for the Mi 9 (`device/cepheus/overlay`, `tools/build_overlays.sh`): 1080x2340,
   the notch outline and status-bar height, transparent corner masks. The donor's colour-mode list is kept
   because ColorOS crashes without it.
+- `ro.sf.lcd_density=480` in `/product/etc/build.prop`. ColorOS sets 480 in `my_product`, but that file is
+  loaded with the system properties and the vendor image's 440 comes later and wins; `/product` is loaded
+  last. ColorOS's display-size steps and the rebuilt overlays assume 480 on a 1080-wide panel.
+- Wired headset detection needs no change: the GSI's own start-up script enables its
+  input-event overlay on Qualcomm hardware.
 - Battery profile (3300 mAh) converted from the base ROM's compiled overlay to
   `my_product/etc/power_profile/power_profile.xml`.
 - `00-port-oplus-stubs.rc` + `oplus-port-stubs.dex` (`device/common/stubs`): stand-ins for
   `IOplusProject` and `IPerformance`, whose absence costs a 5 s wait on every lookup.
 - `00-port-bootlog.rc` + `port-bootlog.sh`: boot logs on the cache partition (`BOOTLOG=0` to leave out).
+
+## Services this vendor image does not have
+
+A ColorOS system on a non-Oplus vendor image must never block on a service that will not appear. Lookups
+with a timeout only cost time; lookups without one stop the calling thread, and when that thread belongs to
+system_server its watchdog restarts the UI or the phone. The cases below come from the Xiaomi Pad 6 port
+(`pipa`), which hit them on a device with the same class of vendor image.
+
+- **Declared but unserved HALs.** The framework manifest (`/system/etc/vintf/manifest.xml`) declares
+  `vendor.oplus.hardware.oplusSensor`, `vendor.oplus.hardware.urcc` and `vendor.oplus.hardware.hummingbird`,
+  but no binary in the system image registers them; on an Oplus phone they sit in the vendor image. Client
+  libraries such as `libsensorserviceextimpl.so` (inside system_server's sensor service) and
+  `liboplus-uah-client.so` ask "is it declared?" and, if so, wait.
+  `device/common/absent_hals.py` removes each declaration unless the vendor or odm manifest serves it.
+- **GPU profiles.** `GameGpuControlPanel` in system_server pushes per-game GPU driver profiles through
+  `libupdateprof.qti.so`, which calls `AServiceManager_waitForService` for Qualcomm's Snapdragon Services /
+  QSPM HAL. The Mi 9 vendor has neither. `tools/elf_swap_import.py` renames that one import to
+  `AServiceManager_checkService` (same signature, returns null at once) and points its symbol version at
+  `LIBBINDER_NDK`, which the library already requires; 15 bytes change, nothing moves. The library's own
+  "no service" path then runs. The earlier ColorOS build the Pad 6 port fell back to imports
+  `checkService` in the same place. The feature `oplus.gpu.controlpanel.support` is removed as well, since
+  the panel cannot do anything here.
+- **SurfaceFlinger.** ColorOS's SurfaceFlinger has six `AServiceManager_waitForService` calls. Each is
+  followed by the typed `fromBinder` conversion, which identifies the interface: Oplus
+  `IDisplayColorFeature` (twice: colour-space update, sharpness), Oplus `IMixLut3D` (Game Filter look-up
+  tables), Pixelworks `IIris` and `IIrisFeature`, and AOSP's AIDL composer. The three Oplus ones have no
+  "is it declared?" test in front of them and run on SurfaceFlinger's main thread, so a call would freeze
+  the screen for good. `tools/patch_sf_waits.py` finds the calls through the PLT, reads the interface from
+  the conversion that follows, and redirects a call to `AServiceManager_checkService` (already imported by
+  SurfaceFlinger) only if no VINTF manifest of the build declares that HAL. On this vendor image that is
+  all six; the Pixelworks and composer ones sit behind a declaration test and were never reached anyway.
+  A wait for a HAL the device does declare is kept, because that service will appear. The code after each
+  call logs "can not get ..." and carries on when the result is null. The binary on the Pad 6 port has the
+  same six calls, and that port runs with the Oplus and `IIris` ones redirected.
+- **Already safe, checked on every build:** `libtrigger-handler.so` (app-launch hints to QSPM) only runs
+  when `ro.vendor.qspm.enable` is `true`, which nothing sets. The Oplus engineer service waits for its HAL
+  only when `ro.adb.secure` is 1; the donor has 0 and it has to stay that way until that code is patched.
+
+## Scheduler groups
+
+The kernel is a 4.14 EAS kernel with `CONFIG_SCHED_TUNE` and no utilisation clamping. The vendor image
+tunes `/dev/stune/{top-app,foreground,background}`. AOSP supports such devices through files chosen by
+`ro.product.first_api_level` (28 from the vendor image): `/system/etc/task_profiles/cgroups_28.json` mounts
+the `schedtune` controller and `task_profiles_28.json` moves the standard task profiles onto it. The base
+ROM has both and creates the groups in `init.rc`. ColorOS ships neither, so `/dev/stune` would not exist:
+the vendor's tuning writes would fail and no task would ever be placed in the groups that tuning is for.
+
+`port.sh` (`sched_groups`) installs the base ROM's cgroup file, a task-profile file built by
+`tools/make_task_profiles.py` (each profile keeps ColorOS's `cpu` group and gains the base ROM's
+`schedtune` group, so ColorOS's own CPU-share handling is unchanged), and `00-port-stune.rc` with the base
+ROM's group-creation commands. Files are written for API level 28 and for the donor's own value (36), so the
+result does not depend on which of the two property definitions init ends up with.
 
 ## Calls and VoLTE (`IMS=base`, `port.sh` `ims_swap`)
 

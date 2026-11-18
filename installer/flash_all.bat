@@ -30,6 +30,7 @@ fastboot flash vendor super_vendor.img || exit /b 1
 if exist super_cust.img (fastboot flash cust super_cust.img || exit /b 1)
 if "%KEEP_DATA%"=="0" (
   fastboot erase metadata || echo warning: could not erase metadata, continuing
+  fastboot erase frp || echo warning: could not erase frp, continuing
   fastboot erase userdata || exit /b 1
 )
 fastboot reboot

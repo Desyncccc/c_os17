@@ -49,6 +49,8 @@ if [ -f super_cust.img ]; then "$FB" flash cust super_cust.img; fi
 # reset clears it too. First-stage init formats it again on the next boot.
 if [ "$KEEP_DATA" = 0 ]; then
   "$FB" erase metadata || echo "warning: could not erase metadata (continuing)"
+  # frp keeps the previous ROM's screen-lock handle; left in place, ColorOS refuses to set a new PIN.
+  "$FB" erase frp || echo "warning: could not erase frp (continuing)"
   "$FB" erase userdata
 fi
 "$FB" reboot

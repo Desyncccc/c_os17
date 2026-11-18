@@ -26,7 +26,7 @@ Details: [docs/STATUS.md](docs/STATUS.md).
 | --- | --- | --- |
 | Kernel, boot ramdisk, dtbo, vbmeta | Project Infinity-X 4.2 for cepheus (Android 17; 4.14.357 kernel with eBPF backports) | First-stage fstab gets an EROFS `/system` entry and plain file-based encryption for `/data`. Kernel, dtb and command line are untouched |
 | `vendor`, `odm` | Same base ROM | fstab as above; one instruction in the display composer service so unknown composer commands are skipped; SoundTrigger HIDL adapter removed; one SELinux rule dropped |
-| `system` (with `system_ext`, `product`, `my_*`) | ColorOS 17 `PLK110`, Axis GSI build | SELinux and property fixes, network-stack binaries for the 4.14 kernel, the base ROM's IMS app (patched) for VoLTE, Mi 9 display overlays and hardware properties, two helper services |
+| `system` (with `system_ext`, `product`, `my_*`) | ColorOS 17 `PLK110`, Axis GSI build | SELinux and property fixes, network-stack binaries for the 4.14 kernel, the base ROM's IMS app (patched) for VoLTE, Mi 9 display overlays and hardware properties, schedtune groups for the 4.14 scheduler, endless waits for services this vendor lacks removed (framework manifest, a GPU-profile library, SurfaceFlinger), two helper services |
 | Partition layout | The base ROM's retrofit super (`system` + `vendor` + `cust`, 6 GiB) | Logical partitions `system`, `vendor`, `odm`; about 1.5 GiB stays free |
 
 Why each change exists: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -54,8 +54,8 @@ Requirements: unlocked bootloader, the phone already running a retrofit dynamic-
 (Project Infinity-X 4.x), a full backup. Flashing erases userdata including internal storage.
 
 Unpack the package, reboot the phone to the bootloader and run `flash_all.sh` (Linux/macOS) or
-`flash_all.bat` (Windows). It writes `boot`, `dtbo`, `vbmeta`, `system` and `vendor`, erases `userdata`
-and `metadata`, and leaves the bootloader, modem and every other firmware partition alone.
+`flash_all.bat` (Windows). It writes `boot`, `dtbo`, `vbmeta`, `system` and `vendor`, erases `userdata`,
+`metadata` and `frp`, and leaves the bootloader, modem and every other firmware partition alone.
 
 If it does not boot, collect logs as described in [docs/DEBUGGING.md](docs/DEBUGGING.md). To go back,
 flash the base ROM from its recovery and format data.
@@ -74,6 +74,9 @@ holds sensitive accounts or data.
 - The [OnePlus 7 Pro ColorOS 17 port](https://github.com/nathanatgit/oneplus7-coloros17-port): its notes
   document, with on-device evidence, the failures a ColorOS 17 system hits on an SM8150 vendor with a
   4.14 kernel. The fixes here follow those findings; the code is written for this repository.
+- The [Xiaomi Pad 6 ColorOS 17 port](https://github.com/Stefan-Atanasov/pipa-cos17-port): its notes on
+  system_server waiting for services a Xiaomi vendor image does not have led to the fixes described under
+  "Services this vendor image does not have" in the architecture notes.
 - [nmeum/android-tools](https://github.com/nmeum/android-tools) and the
   [SELinux project](https://github.com/SELinuxProject/selinux) for the host tools.
 

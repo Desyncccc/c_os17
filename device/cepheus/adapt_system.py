@@ -124,6 +124,9 @@ drop_features("my_product/etc/extension/com.oplus.app-features.xml", "app_featur
     "os.charge.settings.wirelesschargingcoil.position"])
 drop_features("my_product/etc/extension/feature_com.android.battery.xml", "app_feature",
               ["oplus.power.onwirelesscharger.support"])
+# Adreno GPU control panel (per-game driver profiles through Qualcomm's QSPM HAL, which this vendor lacks).
+drop_features("my_product/etc/permissions/oplus.product.features_gameeco_common.xml", "oplus-feature",
+              ["oplus.gpu.controlpanel.support"])
 
 # ---- /my_manifest/build.prop ----------------------------------------------------------------------------
 # Only the marketing names shown in Settings change. Model, device, fingerprints and OTA keys keep the donor

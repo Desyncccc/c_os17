@@ -23,6 +23,14 @@ Every item is a check in `tools/preflight.sh` or `tools/verify_super.py` and run
   ColorOS, compared with the base ROM they were built against (`tools/vendor_link_check.py`). Without the
   `llndk.libraries.txt` fix, 61 of them (camera, among others) would lose `libcamera_metadata.so`.
 - The split super images reproduce every logical partition byte for byte and use the base ROM's geometry.
+- No HAL that only an Oplus vendor image serves is left declared in the framework manifest.
+- `libupdateprof.qti.so` is the donor's file with one import swapped (`waitForService` to `checkService`),
+  and ColorOS's `libbinder_ndk.so` exports the new import under the version the library asks for.
+- `surfaceflinger` is the donor's file with six `bl` instructions retargeted: every wait for a display HAL
+  that no manifest in the images declares. No wait for a declared HAL is touched.
+- The schedtune cgroup file, the task profiles and the init commands agree with each other: every group a
+  profile joins is created, every controller is mounted, and ColorOS's `libprocessgroup` reads such files.
+- The effective display density is 480 after the property files are applied in init's order.
 - The replacement IMS app differs from the base ROM's only in its code, carries ColorOS's signing block, and
   every platform class, method and field it references exists on ColorOS's class path
   (`tools/dex_link_check.py`). Unpatched, three references are missing and four constructors do not exist.
@@ -45,6 +53,8 @@ different parts with different drivers.
 | Auto brightness curve | Off | The donor's nit tables are for another panel |
 | Voice wake-up | Not working | SoundTrigger service removed on purpose |
 | Wireless charging UI, reverse charging | Removed | Oplus charger HAL not present; charging itself is handled by the kernel |
+| Charging notices | Possibly wrong warnings | ColorOS reads charger state from an Oplus HAL this vendor lacks. The Pad 6 port saw a "battery may not be genuine" dialog until it added a stand-in for that HAL, and a "charging voltage too high" notice with third-party chargers. Not addressed here |
+| Game GPU control panel | Removed | Needs Qualcomm's QSPM service, which this vendor image does not have |
 | Always-on display, screen-off gestures, haptics tuning | Unknown | Depend on Oplus touch and display HALs |
 | About phone | Shows `PLK110` as model | Model and fingerprints keep the donor values because ColorOS features key on them |
 | Google apps | None | The donor is the China build |

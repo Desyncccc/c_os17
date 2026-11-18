@@ -19,8 +19,9 @@ Flash
      wizard lets you choose English.
 
 What is flashed: boot, dtbo, vbmeta, and the super members system and vendor (cust, the third member,
-only if the package contains super_cust.img). userdata and metadata are erased. Bootloader, modem and
-all other firmware partitions are left alone.
+only if the package contains super_cust.img). userdata, metadata and frp are erased (frp holds the old
+ROM's screen-lock handle; with it left in place ColorOS cannot set a new PIN). Bootloader, modem and all
+other firmware partitions are left alone.
 
 Re-flashing a newer build of this port over itself, keeping data:
   flash_all.sh --keep-data    (flash_all.bat --keep-data)
