@@ -51,6 +51,12 @@ boot into a fix.
   errors while mounting `/data`: rebuild with `FBE_MODE=keep` (the base ROM's wrapped-key setup), flash
   boot and vendor again, erase `userdata` and `metadata`.
 - **Audio HAL crash loop** with `SOUNDTRIGGER=keep`: go back to the default `remove`.
+- **Calls, VoLTE.** In `adb logcat -b all` look for `ImsRadioHidl` (the app found the modem's IMS interface),
+  `MMTEL` feature state, `FATAL EXCEPTION` in `org.codeaurora.ims` or `com.android.phone`, and
+  `NoSuchMethodError` / `NoClassDefFoundError`. `adb shell dumpsys telephony.registry | grep -i ims` shows
+  the registration state. If the replacement app crashes or takes the phone process down, rebuild with
+  `IMS=donor` and re-flash; switching the IMS app changes its user id, so do that with a full flash (data
+  erased), not `--keep-data`.
 - **Policy.** `SELinux: ... failed` or `secilc` errors in the kernel log: run
   `tools/sepolicy_compile_test.sh` against the mounted images with the message's policy version.
 - **A vendor HAL that will not start.** With SELinux permissive the usual causes are a missing library in

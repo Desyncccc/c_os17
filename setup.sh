@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Prepare an Ubuntu 24.04 (or Debian 12+) host for port.sh. Run once as root:  sudo ./setup.sh
 #
-# Installs distribution packages and puts four tools the distribution does not provide (or provides too old)
+# Installs distribution packages and puts the tools the distribution does not provide (or provides too old)
 # into ./bin, which port.sh adds to PATH:
 #   lpmake, lpdump   Android logical-partition tools, built from the android-tools source release
 #   secilc           SELinux CIL compiler 3.11 (the distribution's 3.5 rejects Android 17 policy syntax)
 #   aapt2            Android resource compiler, from Google's Maven repository
 #   r8.jar           D8 dex compiler, from Google's Maven repository
+#   apktool.jar      smali assembler/disassembler, from the Apktool GitHub releases
 # Every download is pinned by SHA-256.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -22,6 +23,8 @@ AAPT2_VER=8.13.0-13719691
 AAPT2_SHA256=c1aebd96a144313da65de675cc1f59041b41a52e844228d311bb580ed830b0d9
 R8_VER=8.13.25
 R8_SHA256=0d4f2f68c4fcbc9434eff122f41feb6fb1d98efd2faa530cec1abacab1cea03d
+APKTOOL_VER=3.0.3
+APKTOOL_SHA256=dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423
 
 get() {  # <url> <file> <sha256>
   [ -f "$2" ] && echo "$3  $2" | sha256sum -c --quiet 2>/dev/null && return
@@ -63,5 +66,6 @@ if [ ! -x "$BIN/aapt2" ]; then
   unzip -o -q "$BUILD/aapt2.jar" aapt2 -d "$BIN"; chmod +x "$BIN/aapt2"
 fi
 get "https://dl.google.com/dl/android/maven2/com/android/tools/r8/$R8_VER/r8-$R8_VER.jar" "$BIN/r8.jar" "$R8_SHA256"
+get "https://github.com/iBotPeaches/Apktool/releases/download/v$APKTOOL_VER/apktool_$APKTOOL_VER.jar" "$BIN/apktool.jar" "$APKTOOL_SHA256"
 
 echo "host tools ready in $BIN:"; ls "$BIN"

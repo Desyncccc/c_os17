@@ -15,7 +15,8 @@ works, and those rounds need the phone. Treat the first flash as a test, keep a 
 | Verified on the build host | Images build and mount; SELinux policy compiles the three ways init may compile it; property contexts merge; fstab, super layout and boot image are consistent; super images match the partition images byte for byte |
 | Expected from the same donor on the same SoC family (OnePlus 7 Pro port) | Boots to the ColorOS UI; display, touch, Wi-Fi, Bluetooth, mobile data, audio |
 | Unknown until tested on a Mi 9 | Everything above, on this phone |
-| Expected not to work in this build | In-display fingerprint, the ColorOS camera app, VoLTE/VoWiFi, wireless-charging UI, voice wake-up, NFC payments |
+| Attempted, untested | VoLTE and calls: the base ROM's IMS app replaces ColorOS's (build option `IMS`) |
+| Expected not to work in this build | In-display fingerprint, the ColorOS camera app, wireless-charging UI, voice wake-up, NFC payments |
 
 Details: [docs/STATUS.md](docs/STATUS.md).
 
@@ -25,7 +26,7 @@ Details: [docs/STATUS.md](docs/STATUS.md).
 | --- | --- | --- |
 | Kernel, boot ramdisk, dtbo, vbmeta | Project Infinity-X 4.2 for cepheus (Android 17; 4.14.357 kernel with eBPF backports) | First-stage fstab gets an EROFS `/system` entry and plain file-based encryption for `/data`. Kernel, dtb and command line are untouched |
 | `vendor`, `odm` | Same base ROM | fstab as above; one instruction in the display composer service so unknown composer commands are skipped; SoundTrigger HIDL adapter removed; one SELinux rule dropped |
-| `system` (with `system_ext`, `product`, `my_*`) | ColorOS 17 `PLK110`, Axis GSI build | SELinux and property fixes, network-stack binaries for the 4.14 kernel, Mi 9 display overlays and hardware properties, two helper services |
+| `system` (with `system_ext`, `product`, `my_*`) | ColorOS 17 `PLK110`, Axis GSI build | SELinux and property fixes, network-stack binaries for the 4.14 kernel, the base ROM's IMS app (patched) for VoLTE, Mi 9 display overlays and hardware properties, two helper services |
 | Partition layout | The base ROM's retrofit super (`system` + `vendor` + `cust`, 6 GiB) | Logical partitions `system`, `vendor`, `odm`; about 1.5 GiB stays free |
 
 Why each change exists: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

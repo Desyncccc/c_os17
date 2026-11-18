@@ -18,6 +18,8 @@ DEV=$ROOT/device/cepheus
 PY="python3 -I"
 export PATH="$ROOT/bin:$PATH"       # optional locally built tools (lpmake, secilc, aapt2)
 R8_JAR=${R8_JAR:-$ROOT/bin/r8.jar}
+APKTOOL_JAR=${APKTOOL_JAR:-$ROOT/bin/apktool.jar}
+IMS_LIBS=qti-telephony-hidl-wrapper,qti-telephony-utils,ims-ext-common      # the base IMS app's <uses-library> set
 STAGES="deps fetch unpack system vendor boot images preflight super package"
 
 S=$WORK/sys          # ColorOS system tree (root of the system image)
@@ -50,6 +52,8 @@ stage_deps() {
   done
   [ -z "$missing" ] || die "missing tools:$missing (run ./setup.sh, see docs/BUILDING.md)"
   [ -f "$R8_JAR" ] || die "D8 compiler not found at $R8_JAR (run ./setup.sh or set R8_JAR)"
+  [ "$IMS" != base ] || [ -f "$APKTOOL_JAR" ] || die "apktool not found at $APKTOOL_JAR (run ./setup.sh or set APKTOOL_JAR)"
+  case $IMS in base|donor) ;; *) die "IMS must be 'base' or 'donor'";; esac
   grep -qw erofs /proc/filesystems || modprobe erofs 2>/dev/null || die "the build host kernel has no EROFS support"
   echo "all tools present"
 }
@@ -83,8 +87,8 @@ stage_unpack() {
   umount_all
   mkdir -p "$B" "$WORK/donor" "$H"
   unzip -o -q "$WORK/dl/base.zip" boot.img dtbo.img vbmeta.img dynamic_partitions_op_list \
-    system.transfer.list vendor.transfer.list odm.transfer.list product.transfer.list -d "$B"
-  for p in system vendor odm product; do
+    system.transfer.list vendor.transfer.list odm.transfer.list product.transfer.list system_ext.transfer.list -d "$B"
+  for p in system vendor odm product system_ext; do
     [ -f "$B/$p.img" ] || unzip -p "$WORK/dl/base.zip" "$p.new.dat.br" | brotli -dc | $PY "$T/sdat2img.py" "$B/$p.transfer.list" - "$B/$p.img"
   done
   [ -f "$WORK/donor/system.img" ] || unzip -o -q "$WORK/dl/donor.zip" system.img -d "$WORK/donor"
@@ -92,6 +96,7 @@ stage_unpack() {
   mnt "$WORK/donor/system.img" "$M/donor"
   mnt "$B/system.img" "$M/bsys"
   mnt "$B/product.img" "$M/bprod"
+  mnt "$B/system_ext.img" "$M/bsext"
   mnt "$B/vendor.img" "$M/bvend" erofs
   mnt "$B/odm.img" "$M/bodm" erofs
 
@@ -117,6 +122,13 @@ stage_unpack() {
     cp "$M/brt/$d/bionic/libc.so" "$M/brt/$d/bionic/libm.so" "$M/brt/$d/bionic/libdl.so" "$H/base-llndk/$d/"
   done
   umount "$M/brt"; rm -f "$H/runtime-base.img"
+  # The base ROM's IMS app with its two JNI libraries, and the class path it runs on there (boot jars plus its
+  # shared libraries), which tools/dex_link_check.py compares ColorOS's against.
+  rm -rf "$H/ims" "$H/base-platform"; mkdir -p "$H/ims"
+  cp "$M/bsext/priv-app/ims/ims.apk" "$H/ims/ims-base.apk"
+  cp "$M/bsext/lib64/libimsmedia_jni.so" "$M/bsext/lib64/libimscamera_jni.so" "$H/ims/"
+  $PY "$T/dex_link_check.py" harvest "$IMS_LIBS" "$H/base-platform" \
+    /system="$M/bsys/system" /system_ext="$M/bsext" /product="$M/bprod"
 
   # Writable trees. cp -a keeps owners, modes, symlinks and the security.* xattrs.
   rm -rf "$S" "$V" "$O"
@@ -128,7 +140,7 @@ stage_unpack() {
   cp "$V/bin/hw/android.hardware.graphics.composer@2.4-service" "$H/composer.orig"
   umount_all
   if [ "${KEEP_IMAGES:-0}" != 1 ]; then
-    rm -f "$WORK/donor/system.img" "$B/system.img" "$B/product.img" "$B/vendor.img" "$WORK/dl/donor.zip"
+    rm -f "$WORK/donor/system.img" "$B/system.img" "$B/product.img" "$B/system_ext.img" "$B/vendor.img" "$WORK/dl/donor.zip"
   fi
   echo "trees ready: $(du -sh "$S" | cut -f1) system, $(du -sh "$V" | cut -f1) vendor; kver override $(cat "$H/kver")"
 }
@@ -198,6 +210,49 @@ port_services() {
   done
 }
 
+ims_swap() {
+  # VoLTE: ColorOS's org.codeaurora.ims only has the AIDL IImsRadio client, the Mi 9 vendor image only serves
+  # the HIDL interface, so with ColorOS's app IMS never registers (no VoLTE; on the OnePlus 7 Pro port outgoing
+  # calls failed too). Ship the base ROM's app instead, patched to link against ColorOS's libraries
+  # (device/common/ims/patch_ims_app.py), carrying ColorOS's signing block so it keeps the platform identity
+  # the other telephony components expect, with its own two JNI libraries next to it.
+  local d=$WORK/ims app=$S/system_ext/priv-app/ims f
+  [ -f "$app/ims.apk" ] && [ -L "$app/lib/arm64/libimsmedia_jni.so" ] && [ -d "$app/oat" ] || die "donor IMS app layout changed"
+  rm -rf "$d"; mkdir -p "$d"
+  f=$(aapt2 dump xmltree --file AndroidManifest.xml "$H/ims/ims-base.apk" | grep -A1 'E: uses-library' \
+        | sed -n 's/.*android:name([^)]*)="\([^"]*\)".*/\1/p' | paste -sd,)
+  [ "$f" = "$IMS_LIBS" ] || die "the base IMS app uses libraries '$f', expected '$IMS_LIBS'"
+  java -jar "$APKTOOL_JAR" d -r -f -o "$d/src" "$H/ims/ims-base.apk" > "$d/apktool.log" 2>&1 || true
+  [ -d "$d/src/smali" ] || { tail -5 "$d/apktool.log"; die "apktool could not decode the IMS app"; }
+  $PY "$ROOT/device/common/ims/patch_ims_app.py" "$d/src" "$ROOT/device/common/ims/TelephonyBaseUtilsStub.smali"
+  java -jar "$APKTOOL_JAR" b -o "$d/unsigned.apk" "$d/src" >> "$d/apktool.log" 2>&1 || true
+  [ -f "$d/unsigned.apk" ] || { tail -5 "$d/apktool.log"; die "apktool could not rebuild the IMS app"; }
+  zipalign -f 4 "$d/unsigned.apk" "$d/aligned.apk"            # before the transplant: zipalign drops the block
+  $PY "$T/apk_sigblock.py" transplant "$app/ims.apk" "$d/aligned.apk" "$d/ims.apk"
+  zipalign -c 4 "$d/ims.apk" || die "patched IMS app is not 4-byte aligned"
+  # Only the code may differ from the base ROM's app.
+  $PY - "$H/ims/ims-base.apk" "$d/ims.apk" <<'PYEOF'
+import sys, zipfile
+a, b = zipfile.ZipFile(sys.argv[1]), zipfile.ZipFile(sys.argv[2])
+assert set(a.namelist()) == set(b.namelist()), "entry list changed"
+diff = [n for n in a.namelist() if a.read(n) != b.read(n)]
+assert diff == ["classes.dex"], f"unexpected changes: {diff}"
+assert b.getinfo("resources.arsc").compress_type == 0, "resources.arsc must be stored"
+PYEOF
+  # Every platform class, method and field the patched app uses must exist on ColorOS's class path.
+  $PY "$T/dex_link_check.py" "$d/ims.apk" "$IMS_LIBS" --strict \
+    --base /system="$H/base-platform/system" /system_ext="$H/base-platform/system_ext" /product="$H/base-platform/product" \
+    --target /system="$S/system" /system_ext="$S/system_ext" /product="$S/product"
+  cat "$d/ims.apk" > "$app/ims.apk"                             # in place: keeps owner, mode and label
+  rm -rf "$app/oat"                                             # compiled code of ColorOS's app
+  rm -f "$app/lib/arm64/libimsmedia_jni.so"                     # link to ColorOS's JNI library (fails JNI_OnLoad with this app)
+  for f in libimsmedia_jni.so libimscamera_jni.so; do
+    install -m 0644 -o root -g root "$H/ims/$f" "$app/lib/arm64/$f"
+    label system_lib_file "$app/lib/arm64/$f"
+  done
+  echo "IMS app replaced with the base ROM's (patched)"
+}
+
 stage_system() {
   log "system"
   [ -f "$S/system/build.prop" ] || die "no system tree (run the unpack stage)"
@@ -206,6 +261,7 @@ stage_system() {
   $PY "$DEV/adapt_system.py" "$S" "$(cat "$H/kver")" "$H/llndk.libraries.txt"
   tether_override
   port_services
+  if [ "$IMS" = base ]; then ims_swap; fi
 
   # Display overlays: replace the donor's two OnePlus 15 panel overlays with Mi 9 builds (same file names).
   local ov=$WORK/overlays f
@@ -297,7 +353,7 @@ stage_images() {
 
 stage_preflight() {
   log "preflight"
-  WORK=$WORK OUT=$OUT bash "$T/preflight.sh"
+  WORK=$WORK OUT=$OUT FBE_MODE=$FBE_MODE SOUNDTRIGGER=$SOUNDTRIGGER IMS=$IMS IMS_LIBS=$IMS_LIBS bash "$T/preflight.sh"
 }
 
 stage_super() {

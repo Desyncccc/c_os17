@@ -124,6 +124,58 @@ assert d[:4] == b'dex\n' and struct.unpack_from('<I', d, 0x60)[0] == 2 and b'Lpo
 " "$PS/system/framework/oplus-port-stubs.dex" 2>/dev/null && ok "Oplus stand-in dex holds only the two port classes" || bad "oplus-port-stubs.dex"
 grep -q '^(type su)' "$PS/system/etc/selinux/plat_sepolicy.cil" && ok "su domain exists for the port services' seclabel" || bad "no su domain"
 
+if [ "${IMS:-base}" = base ]; then
+  echo "-- IMS app (VoLTE): the base ROM's app, patched, in place of ColorOS's"
+  ia=$PS/system_ext/priv-app/ims
+  $PY "$T/apk_sigblock.py" info "$ia/ims.apk" 2>/dev/null | grep -q "'v2', 'v3'" && zipalign -c 4 "$ia/ims.apk" >/dev/null 2>&1 \
+    && ok "ims.apk carries a v2/v3 signing block and is 4-byte aligned" || bad "ims.apk signing block or alignment"
+  [ "$(aapt2 dump packagename "$ia/ims.apk" 2>/dev/null)" = org.codeaurora.ims ] && ok "ims.apk parses as org.codeaurora.ims" || bad "ims.apk does not parse"
+  python3 -I -c "
+import sys, zipfile
+a, b = zipfile.ZipFile(sys.argv[1]), zipfile.ZipFile(sys.argv[2])
+assert set(a.namelist()) == set(b.namelist())
+assert [n for n in a.namelist() if a.read(n) != b.read(n)] == ['classes.dex']
+" "$H/ims/ims-base.apk" "$ia/ims.apk" 2>/dev/null && ok "ims.apk differs from the base ROM's app only in classes.dex" || bad "ims.apk content"
+  if $PY "$T/dex_link_check.py" "$ia/ims.apk" "${IMS_LIBS:?}" --strict \
+       --base /system="$H/base-platform/system" /system_ext="$H/base-platform/system_ext" /product="$H/base-platform/product" \
+       --target /system="$PS/system" /system_ext="$PS/system_ext" /product="$PS/product" > "$WORK/pf.log" 2>&1; then
+    ok "ims.apk: $(sed -n 1p "$WORK/pf.log"); all resolve on ColorOS's class path, no constructor left dangling"
+  else
+    bad "ims.apk references something ColorOS's class path does not have"; sed 's/^/        /' "$WORK/pf.log" | tail -8
+  fi
+  [ ! -e "$ia/oat" ] && ok "no stale compiled code of ColorOS's app" || bad "ims/oat still present"
+  for f in libimsmedia_jni.so libimscamera_jni.so; do
+    [ -f "$ia/lib/arm64/$f" ] && [ ! -L "$ia/lib/arm64/$f" ] && cmp -s "$ia/lib/arm64/$f" "$H/ims/$f" \
+      && [ "$(lab "$ia/lib/arm64/$f")" = "u:object_r:system_lib_file:s0" ] && ok "$f: the base ROM's library, labelled system_lib_file" || bad "$f"
+  done
+  python3 -I - "$ia/lib/arm64" "$PS/system/lib64" "$PR/lib64/bionic" <<'PY' && ok "the IMS JNI libraries resolve their imports in ColorOS's platform libraries" || bad "IMS JNI library imports"
+import os, subprocess, sys
+def syms(p, kind):
+    out = subprocess.run(["nm", "-D", f"--{kind}-only", p], capture_output=True, text=True).stdout
+    return {l.split()[-1].split("@")[0] for l in out.splitlines() if l.strip()}
+bad = False
+for lib in ("libimsmedia_jni.so", "libimscamera_jni.so"):
+    p = os.path.join(sys.argv[1], lib)
+    need = [l.split("[")[1].split("]")[0] for l in subprocess.run(["readelf", "-d", p], capture_output=True, text=True).stdout.splitlines() if "(NEEDED)" in l]
+    provided = set()
+    for n in need:
+        for d in sys.argv[2:4]:
+            q = os.path.join(d, n)
+            if os.path.isfile(q) and not os.path.islink(q):
+                provided |= syms(q, "defined")
+                break
+        else:
+            if n != "libnativehelper.so":        # lives in the ART APEX; its jni* helpers are accepted below
+                print(lib, "needs", n, "which ColorOS does not provide"); bad = True
+    missing = {s for s in syms(p, "undefined") if s not in provided and not s.startswith("jni")}
+    if missing:
+        print(lib, "unresolved:", sorted(missing)[:5]); bad = True
+    if "JNI_OnLoad" not in syms(p, "defined"):
+        print(lib, "has no JNI_OnLoad"); bad = True
+sys.exit(1 if bad else 0)
+PY
+fi
+
 echo "-- display"
 c=$PV/bin/hw/android.hardware.graphics.composer@2.4-service
 d=$(cmp -l "$H/composer.orig" "$c" | wc -l)
@@ -134,7 +186,8 @@ for f in android_framework_res_overlay.display.product.24831.apk oplus_framework
   jarsigner -verify "$PS/my_product/overlay/$f" 2>/dev/null | grep -q 'jar verified' && zipalign -c 4 "$PS/my_product/overlay/$f" >/dev/null 2>&1 \
     && ok "$f: signed and aligned" || bad "$f"
 done
-aapt2 dump resources "$PS/my_product/overlay/android_framework_res_overlay.display.product.24831.apk" 2>/dev/null | grep -A1 config_stableDeviceDisplayHeight | grep -q 2340 \
+res=$(aapt2 dump resources "$PS/my_product/overlay/android_framework_res_overlay.display.product.24831.apk" 2>/dev/null)
+awk '/config_stableDeviceDisplayHeight/ { getline; if ($0 ~ /2340/) found = 1 } END { exit !found }' <<< "$res" \
   && ok "display overlay describes the 1080x2340 panel" || bad "display overlay values"
 
 echo "-- properties and configuration"

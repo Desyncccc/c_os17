@@ -23,6 +23,9 @@ Every item is a check in `tools/preflight.sh` or `tools/verify_super.py` and run
   ColorOS, compared with the base ROM they were built against (`tools/vendor_link_check.py`). Without the
   `llndk.libraries.txt` fix, 61 of them (camera, among others) would lose `libcamera_metadata.so`.
 - The split super images reproduce every logical partition byte for byte and use the base ROM's geometry.
+- The replacement IMS app differs from the base ROM's only in its code, carries ColorOS's signing block, and
+  every platform class, method and field it references exists on ColorOS's class path
+  (`tools/dex_link_check.py`). Unpatched, three references are missing and four constructors do not exist.
 
 ## Not verifiable without the phone
 
@@ -37,7 +40,8 @@ different parts with different drivers.
 | --- | --- | --- |
 | In-display fingerprint | Not working | ColorOS drives the sensor light-up through Oplus display HALs; the Mi 9 vendor marks the fingerprint layer by the AOSP layer name. Needs on-device work |
 | ColorOS camera app | Likely crashes | Built for the OnePlus 15 camera HAL. Third-party Camera2 apps are the first thing to try |
-| VoLTE / VoWiFi | Likely not working | ColorOS's IMS app expects the AIDL IMS radio, the vendor serves HIDL. Calls may fall back to 3G/2G where available |
+| Calls, VoLTE | Attempted, untested | ColorOS's IMS app cannot talk to this vendor's HIDL IMS radio, so the base ROM's app is shipped instead (`IMS=base`). It links cleanly; whether IMS registers on your network is unknown. If telephony misbehaves, build with `IMS=donor` to get ColorOS's app back (then expect no VoLTE and, as on the OnePlus 7 Pro port, failing outgoing calls) |
+| VoWiFi, video calls | Unknown | Same app; not looked at separately |
 | Auto brightness curve | Off | The donor's nit tables are for another panel |
 | Voice wake-up | Not working | SoundTrigger service removed on purpose |
 | Wireless charging UI, reverse charging | Removed | Oplus charger HAL not present; charging itself is handled by the kernel |

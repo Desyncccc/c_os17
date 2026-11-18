@@ -65,6 +65,32 @@ Facts read from the images (see `port.sh unpack` and the analysis that led to th
   `IOplusProject` and `IPerformance`, whose absence costs a 5 s wait on every lookup.
 - `00-port-bootlog.rc` + `port-bootlog.sh`: boot logs on the cache partition (`BOOTLOG=0` to leave out).
 
+## Calls and VoLTE (`IMS=base`, `port.sh` `ims_swap`)
+
+ColorOS 17's IMS app (`org.codeaurora.ims`) only contains the AIDL client for the modem's IMS interface. The
+Mi 9 vendor image serves the HIDL one (`vendor.qti.hardware.radio.ims@1.6`). With ColorOS's app IMS never
+registers: no VoLTE, and on the OnePlus 7 Pro port, which was in the same position, outgoing calls failed
+until the app was replaced. Where 3G is switched off, calls depend on VoLTE or a 2G fallback.
+
+The port ships the base ROM's IMS app, which has the HIDL client and runs on this vendor image today:
+
+- `device/common/ims/patch_ims_app.py` edits the decoded app (apktool, code only): four constructors that
+  call a no-argument base-class constructor the platform library no longer has now call the
+  `(Executor, Context)` one, as ColorOS's own app does; one call to a method ColorOS's library dropped is
+  redirected to the method it forwarded to; a MIUI helper class the base ROM supplies from a separate jar is
+  compiled in.
+- `tools/dex_link_check.py` is how those were found and how the result is checked: every class, method and
+  field the app references outside itself is resolved on the base ROM's class path and on ColorOS's. After
+  patching nothing is missing and no constructor is left dangling. The three shared libraries the app uses
+  have the same classes on both platforms.
+- `tools/apk_sigblock.py` attaches the signing block of ColorOS's IMS app, so the replacement presents
+  ColorOS's certificate to the other telephony components. The package manager does not check content
+  digests for APKs on system partitions.
+- The app's two JNI libraries come from the base ROM and sit in the app's own `lib/arm64`; their imports
+  resolve in ColorOS's platform libraries.
+
+None of this has run on a phone. `IMS=donor` builds with ColorOS's app untouched.
+
 The Axis GSI hides `/vendor/overlay` at boot and uses its own copies of the donor's vendor overlays. That is
 kept: the Mi 9's own framework overlay would replace the colour-mode list ColorOS depends on.
 

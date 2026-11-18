@@ -10,8 +10,8 @@ extended attributes, and `mkfs.erofs` writes those into the images.
 sudo ./setup.sh
 ```
 
-`setup.sh` installs distribution packages and builds or downloads four tools into `./bin` (`lpmake`,
-`lpdump`, `secilc` 3.11, `aapt2`, `r8.jar`). Downloads are pinned by SHA-256. The distribution's own
+`setup.sh` installs distribution packages and builds or downloads the remaining tools into `./bin` (`lpmake`,
+`lpdump`, `secilc` 3.11, `aapt2`, `r8.jar`, `apktool.jar`). Downloads are pinned by SHA-256. The distribution's own
 `secilc` 3.5 cannot compile Android 17 policy, and its `mkbootimg` package is incomplete, which is why the
 repository carries `tools/bootimg.py`.
 
@@ -36,12 +36,15 @@ trees (set `KEEP_IMAGES=1` to keep the extracted images so `unpack` does not dow
 | `WORK` | `./work` | Scratch directory (downloads, trees, intermediate files) |
 | `OUT` | `./out` | Images and the package |
 | `FBE_MODE` | `standard` | `standard`: plain AOSP file-based encryption. `keep`: the base ROM's wrapped-key and metadata-encryption setup |
+| `IMS` | `base` | `base` replaces ColorOS's IMS app with the base ROM's, patched (VoLTE attempt). `donor` keeps ColorOS's |
 | `SOUNDTRIGGER` | `remove` | `remove` drops the vendor's SoundTrigger HIDL adapter, `keep` leaves it |
 | `BOOTLOG` | `1` | `1` installs the boot log keeper (logs on the cache partition) |
 | `EROFS_COMPRESS` | `lz4hc,9` | Compressor for system and vendor; the base kernel reads LZ4 only |
 | `KEEP_IMAGES` | `0` | `1` keeps extracted input images after `unpack` |
 | `SLIM` | `0` | `1` deletes `system.img`/`vendor.img` once the super images are verified |
+| `FIXED_TIME` | build time | Timestamp of every file in the images. Newer than the phone's package cache after a `--keep-data` re-flash, so changed system apps are re-read |
 | `R8_JAR` | `./bin/r8.jar` | D8 compiler jar |
+| `APKTOOL_JAR` | `./bin/apktool.jar` | Apktool jar (only needed for `IMS=base`) |
 
 ## Output
 
