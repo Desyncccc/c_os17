@@ -38,6 +38,8 @@ trees (set `KEEP_IMAGES=1` to keep the extracted images so `unpack` does not dow
 | `FBE_MODE` | `standard` | `standard`: plain AOSP file-based encryption. `keep`: the base ROM's wrapped-key and metadata-encryption setup |
 | `IMS` | `base` | `base` replaces ColorOS's IMS app with the base ROM's, patched (VoLTE attempt). `donor` keeps ColorOS's |
 | `SOUNDTRIGGER` | `remove` | `remove` drops the vendor's SoundTrigger HIDL adapter, `keep` leaves it |
+| `OTA_APP` | `remove` | `remove` leaves ColorOS's update client out of the image, `keep` ships it (never install what it offers) |
+| `GMS` | `on` | `on` leaves Google Play services enabled on the first boot. `donor` keeps the China build's behaviour: present but disabled until switched on in Settings |
 | `BOOTLOG` | `1` | `1` installs the boot log keeper (logs on the cache partition) |
 | `EROFS_COMPRESS` | `lz4hc,9` | Compressor for system and vendor; the base kernel reads LZ4 only |
 | `KEEP_IMAGES` | `0` | `1` keeps extracted input images after `unpack` |

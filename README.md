@@ -16,7 +16,8 @@ works, and those rounds need the phone. Treat the first flash as a test, keep a 
 | Expected from the same donor on the same SoC family (OnePlus 7 Pro port) | Boots to the ColorOS UI; display, touch, Wi-Fi, Bluetooth, mobile data, audio |
 | Unknown until tested on a Mi 9 | Everything above, on this phone |
 | Attempted, untested | VoLTE and calls: the base ROM's IMS app replaces ColorOS's (build option `IMS`) |
-| Expected not to work in this build | In-display fingerprint, the ColorOS camera app, wireless-charging UI, voice wake-up, NFC payments |
+| Expected not to work in this build | In-display fingerprint, wireless-charging UI, voice wake-up, NFC payments, the game GPU control panel |
+| Camera | Unknown. The image carries Open Camera, not the ColorOS camera app |
 
 Details: [docs/STATUS.md](docs/STATUS.md).
 

@@ -280,12 +280,21 @@ grep -qx libcamera_metadata.so "$PS/system/etc/llndk.libraries.txt" && ok "libca
 python3 -I -c "import sys, xml.dom.minidom as m; [m.parse(f) for f in sys.argv[1:]]" "$PS/my_product/etc/power_profile/power_profile.xml" \
   "$PS"/my_product/etc/extension/com.oplus.oplus-feature.xml "$PS"/my_product/etc/extension/com.oplus.app-features.xml \
   "$PS"/my_product/etc/extension/feature_com.android.battery.xml "$PV/etc/vintf/manifest.xml" \
-  "$PS/system/etc/vintf/manifest.xml" "$PS/my_product/etc/permissions/oplus.product.features_gameeco_common.xml" 2>/dev/null \
+  "$PS/system/etc/vintf/manifest.xml" "$PS/my_product/etc/permissions/oplus.product.features_gameeco_common.xml" \
+  "$PS/my_product/etc/config/sys_gms_download_app_whitelist.xml" 2>/dev/null \
   && ok "edited XML files are well-formed" || bad "an edited XML file does not parse"
 if [ "${SOUNDTRIGGER:-remove}" = remove ]; then
   ! grep -q 'android.hardware.soundtrigger' "$PV/etc/vintf/manifest.xml" && ! out_has 'soundtrigger@' ls "$PV"/lib*/hw \
     && ok "SoundTrigger HIDL adapter and manifest entry removed together" || bad "SoundTrigger removal incomplete"
 fi
+if [ "${OTA_APP:-remove}" = remove ]; then
+  [ ! -e "$PS/system_ext/app/OTA" ] && ! grep -rqs 'package="com.oplus.ota"' "$PS/system/etc/sysconfig" "$PS/system_ext/etc/sysconfig" \
+    && ok "ColorOS's update client is not in the image" || bad "update client still present or still listed as required"
+fi
+g=$PS/my_product/etc/config/sys_gms_download_app_whitelist.xml
+if [ "${GMS:-on}" = on ]; then want=enable; else want=disable; fi
+[ "$(grep -c '<switch value=' "$g")" = 1 ] && grep -q "<switch value=\"$want\" />" "$g" && [ -d "$PS/my_product/priv-app/GmsCore" ] \
+  && ok "Google Play services present, first-boot switch: $want" || bad "Google services switch (expected $want)"
 # Load order is system (+ my_* imports), system_ext, vendor, odm, product; the last definition wins.
 den=$(cat "$PS/system/build.prop" "$PS"/my_*/build.prop "$PS/system_ext/etc/build.prop" "$PV/build.prop" "$PO/etc/build.prop" "$PS/product/etc/build.prop" 2>/dev/null \
       | sed -n 's/^ro.sf.lcd_density=//p' | tail -1)

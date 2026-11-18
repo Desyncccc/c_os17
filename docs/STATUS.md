@@ -47,18 +47,18 @@ different parts with different drivers.
 | Area | Expectation | Why |
 | --- | --- | --- |
 | In-display fingerprint | Not working | ColorOS drives the sensor light-up through Oplus display HALs; the Mi 9 vendor marks the fingerprint layer by the AOSP layer name. Needs on-device work |
-| ColorOS camera app | Likely crashes | Built for the OnePlus 15 camera HAL. Third-party Camera2 apps are the first thing to try |
+| Camera | Unknown | The donor image has no ColorOS camera app; it ships Open Camera 1.54.1, a plain Camera2 app. Whether ColorOS's camera service works with the Mi 9 camera HAL is untested |
 | Calls, VoLTE | Attempted, untested | ColorOS's IMS app cannot talk to this vendor's HIDL IMS radio, so the base ROM's app is shipped instead (`IMS=base`). It links cleanly; whether IMS registers on your network is unknown. If telephony misbehaves, build with `IMS=donor` to get ColorOS's app back (then expect no VoLTE and, as on the OnePlus 7 Pro port, failing outgoing calls) |
 | VoWiFi, video calls | Unknown | Same app; not looked at separately |
-| Auto brightness curve | Off | The donor's nit tables are for another panel |
+| Auto brightness | Unknown, likely needs tuning | The donor overlay's brightness tables describe the OnePlus 15 panel and are not carried over, so the framework defaults apply |
 | Voice wake-up | Not working | SoundTrigger service removed on purpose |
 | Wireless charging UI, reverse charging | Removed | Oplus charger HAL not present; charging itself is handled by the kernel |
 | Charging notices | Possibly wrong warnings | ColorOS reads charger state from an Oplus HAL this vendor lacks. The Pad 6 port saw a "battery may not be genuine" dialog until it added a stand-in for that HAL, and a "charging voltage too high" notice with third-party chargers. Not addressed here |
 | Game GPU control panel | Removed | Needs Qualcomm's QSPM service, which this vendor image does not have |
 | Always-on display, screen-off gestures, haptics tuning | Unknown | Depend on Oplus touch and display HALs |
 | About phone | Shows `PLK110` as model | Model and fingerprints keep the donor values because ColorOS features key on them |
-| Google apps | None | The donor is the China build |
-| OTA updates | Must not be installed | The updater would write OnePlus 15 firmware layouts |
+| Google apps | Play services only | The donor is the China build: it carries Google Play services and the services framework but no Play Store, and disables them on the first boot. This build leaves them enabled (`GMS=on`); the Settings switch remains. The Play Store has to be installed by hand |
+| OTA updates | Updater removed | ColorOS's update client (`com.oplus.ota`) would offer OnePlus 15 firmware and system-app bundles, which can replace apps this port changed (the IMS app, for one). It is left out (`OTA_APP=remove`); Settings then shows no software-update entry. Updating means flashing a newer build of this port |
 
 ## Next steps once a phone is available
 
@@ -66,5 +66,8 @@ different parts with different drivers.
 2. Confirm the basics: display, touch, Wi-Fi, mobile data, calls, SMS, audio, sensors.
 3. Fingerprint: provide the display-panel feature the ColorOS framework asks for and mark the pressed layer
    for the Mi 9 kernel's HBM path.
-4. Camera: stock app or a port of the base ROM's.
+4. Camera: try Open Camera first. If the camera service works but the app does not suit the sensors, the
+   base ROM's camera app (Aperture, `/product/app/Aperture`) is a drop-in candidate: it is unprivileged,
+   carries its native libraries inside the APK, and `tools/dex_link_check.py` finds every platform
+   reference it makes on ColorOS's class path.
 5. Hardened build: adb authorisation, `ro.debuggable=0`, enforcing SELinux with a domain for the helpers.

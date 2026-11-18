@@ -11,6 +11,7 @@ boot into a fix.
 | Reboots after 1-2 minutes | `netbpfload` failure, `/data` encryption failure, or a critical service crash-looping | boot logs on the cache partition, pstore |
 | Stays on the Mi logo | SurfaceFlinger or the composer never presents a frame | `adb logcat`, look for `composer`, `SurfaceFlinger`, `failed to parse command` |
 | Boot animation forever | system_server crash loop or watchdog | `adb logcat -b all`, look for `FATAL EXCEPTION IN SYSTEM PROCESS`, `Watchdog` |
+| The phone ends up in recovery by itself after several UI restarts | ColorOS's boot monitor (`boot_monitor_service`) counts system_server failures and, when its repair steps run out, reboots to recovery. Nothing is erased | `/cache/port-logs` from recovery; `adb shell getprop persist.sys.boot_monitor.mode` on the next boot |
 | UI freezes, then restarts; or a reboot every few minutes | A system_server thread is waiting for a service that does not exist, and the watchdog gives up after about 3 minutes | `adb pull /data/anr` and read `traces_SystemServer_WDT*`: the blocked thread's stack names the caller |
 
 ## Getting logs

@@ -314,6 +314,27 @@ stage_system() {
   sched_groups
   port_services
   if [ "$IMS" = base ]; then ims_swap; fi
+  # Update client: this phone reports itself as a OnePlus 15, so the client would offer that model's firmware
+  # and system-app bundles; an Oplus-signed bundle can replace apps the port changed (the IMS app).
+  if [ "$OTA_APP" = remove ]; then
+    [ "$(aapt2 dump packagename "$S/system_ext/app/OTA/OTA.apk")" = com.oplus.ota ] || die "system_ext/app/OTA is not the update client"
+    rm -rf "$S/system_ext/app/OTA"
+    echo "update client (com.oplus.ota) left out"
+  fi
+  # Google Play services: the China build ships them but disables them on the first boot. "enable" leaves them
+  # on; the Settings switch stays. The Play Store is not part of the image either way.
+  if [ "$GMS" = on ]; then
+    $PY - "$S/my_product/etc/config/sys_gms_download_app_whitelist.xml" <<'PY'
+import sys
+path, old, new = sys.argv[1], '<switch value="disable" />', '<switch value="enable" />'
+text = open(path, encoding="utf-8").read()
+assert text.count(old) == 1 and 'pkg="com.google.android.gms"' in text, "unexpected Google services switch file"
+with open(path, "r+", encoding="utf-8") as fh:      # in place: owner, mode and label stay
+    fh.write(text.replace(old, new))
+    fh.truncate()
+print("Google Play services: enabled by default")
+PY
+  fi
 
   # Display overlays: replace the donor's two OnePlus 15 panel overlays with Mi 9 builds (same file names).
   local ov=$WORK/overlays f
@@ -409,7 +430,7 @@ stage_images() {
 
 stage_preflight() {
   log "preflight"
-  WORK=$WORK OUT=$OUT FBE_MODE=$FBE_MODE SOUNDTRIGGER=$SOUNDTRIGGER IMS=$IMS IMS_LIBS=$IMS_LIBS bash "$T/preflight.sh"
+  WORK=$WORK OUT=$OUT FBE_MODE=$FBE_MODE SOUNDTRIGGER=$SOUNDTRIGGER IMS=$IMS IMS_LIBS=$IMS_LIBS GMS=$GMS OTA_APP=$OTA_APP bash "$T/preflight.sh"
 }
 
 stage_super() {

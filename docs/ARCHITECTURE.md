@@ -67,6 +67,15 @@ Facts read from the images (see `port.sh unpack` and the analysis that led to th
   last. ColorOS's display-size steps and the rebuilt overlays assume 480 on a 1080-wide panel.
 - Wired headset detection needs no change: the GSI's own start-up script enables its
   input-event overlay on Qualcomm hardware.
+- The update client `/system_ext/app/OTA` (`com.oplus.ota`) is removed (`OTA_APP=remove`). The phone
+  identifies as a OnePlus 15, so the client would fetch that model's firmware, which does not fit this
+  phone's partition layout, and system-app bundles, which install like any app update: an Oplus-signed update of
+  `org.codeaurora.ims` would replace the patched IMS app. The Pad 6 port removes the same app and reports
+  that Settings then hides the entry.
+- Google Play services (`GMS=on`): the China build reads
+  `my_product/etc/config/sys_gms_download_app_whitelist.xml` on the first boot and, with
+  `<switch value="disable" />`, disables the package. The switch is set to `enable`; the user-facing toggle
+  in Settings is untouched. The first boot decides, so this only takes effect on a clean flash.
 - Battery profile (3300 mAh) converted from the base ROM's compiled overlay to
   `my_product/etc/power_profile/power_profile.xml`.
 - `00-port-oplus-stubs.rc` + `oplus-port-stubs.dex` (`device/common/stubs`): stand-ins for
