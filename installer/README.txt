@@ -22,6 +22,9 @@ What is flashed: boot, dtbo, vbmeta, and the super members system and vendor (cu
 only if the package contains super_cust.img). userdata and metadata are erased. Bootloader, modem and
 all other firmware partitions are left alone.
 
+Re-flashing a newer build of this port over itself, keeping data:
+  flash_all.sh --keep-data    (flash_all.bat --keep-data)
+
 If it does not boot
   * Back in recovery after ~20 s: init hit a fatal error (the boot image sets
     androidboot.init_fatal_reboot_target=recovery).

@@ -332,7 +332,8 @@ stage_package() {
     ln "$f" "$pkg/" 2>/dev/null || cp "$f" "$pkg/"
   done
   [ -f "$pkg/super_system.img" ] && [ -f "$pkg/super_vendor.img" ] || die "super images missing"
-  cp "$ROOT/installer/flash_all.sh" "$ROOT/installer/flash_all.bat" "$ROOT/installer/README.txt" "$pkg/"
+  cp "$ROOT/installer/flash_all.sh" "$ROOT/installer/README.txt" "$pkg/"
+  sed -e 's/\r$//' -e 's/$/\r/' "$ROOT/installer/flash_all.bat" > "$pkg/flash_all.bat"     # CRLF for cmd.exe
   chmod +x "$pkg/flash_all.sh"
   (cd "$pkg" && sha256sum *.img > SHA256SUMS)
   rm -f "$OUT/$name.zip"
