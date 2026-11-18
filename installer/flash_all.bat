@@ -22,7 +22,7 @@ fastboot flash vbmeta vbmeta.img || exit /b 1
 fastboot flash system super_system.img || exit /b 1
 fastboot flash vendor super_vendor.img || exit /b 1
 if exist super_cust.img (fastboot flash cust super_cust.img || exit /b 1)
-fastboot erase metadata || exit /b 1
+fastboot erase metadata || echo warning: could not erase metadata (continuing)
 fastboot erase userdata || exit /b 1
 fastboot reboot
 echo Done. The first boot formats userdata and can take 5-10 minutes. See README.txt if it does not boot.

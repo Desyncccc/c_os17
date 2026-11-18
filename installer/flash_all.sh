@@ -36,7 +36,9 @@ read -r -p "Type YES to continue: " answer
 "$FB" flash vendor super_vendor.img
 # cust is the third member of the retrofit super; it is only written when the build needs its space.
 if [ -f super_cust.img ]; then "$FB" flash cust super_cust.img; fi
-"$FB" erase metadata
+# metadata holds state tied to the previous installation (key directories, lock-screen slots); a factory
+# reset clears it too. First-stage init formats it again on the next boot.
+"$FB" erase metadata || echo "warning: could not erase metadata (continuing)"
 "$FB" erase userdata
 "$FB" reboot
 echo "Done. The first boot formats userdata and can take 5-10 minutes. See README.txt if it does not boot."
