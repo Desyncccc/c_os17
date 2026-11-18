@@ -1,0 +1,11 @@
+# cepheus port (experimental builds): keep the logs of this boot and the previous one on the cache
+# partition, where a recovery can read them even when /data never mounts and adb never comes up.
+service port_bootlog /system/bin/sh /system/bin/port-bootlog.sh
+    user root
+    group root system log
+    seclabel u:r:su:s0
+    disabled
+    oneshot
+
+on post-fs
+    start port_bootlog

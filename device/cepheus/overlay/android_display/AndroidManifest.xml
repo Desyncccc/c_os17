@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces the donor's OnePlus 15 display overlay (same package, same priority) with Mi 9 panel values. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="android.frameworkres.overlay.display.product"
+    android:versionCode="33"
+    android:versionName="33">
+    <application android:allowBackup="false" android:extractNativeLibs="false" android:hasCode="false" />
+    <overlay android:priority="700" android:targetPackage="android" android:isStatic="true" />
+</manifest>

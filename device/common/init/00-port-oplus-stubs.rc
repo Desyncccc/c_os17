@@ -1,0 +1,11 @@
+# cepheus port: stand-ins for Oplus vendor AIDL services the Mi 9 vendor image does not have
+# (device/common/stubs). Started before zygote so the first lookups already find them.
+service port_oplus_stubs /system/bin/app_process /system/bin port.OplusStubs vendor.oplus.hardware.stability.oplus_project.IOplusProject/default vendor.oplus.hardware.performance.IPerformance/default
+    user root
+    group root system
+    setenv CLASSPATH /system/framework/oplus-port-stubs.dex
+    seclabel u:r:su:s0
+    disabled
+
+on post-fs-data
+    start port_oplus_stubs

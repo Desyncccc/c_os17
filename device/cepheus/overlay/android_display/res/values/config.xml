@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Kept from the donor overlay: ColorOS stores display_color_mode values 301..308; without them
+         ColorDisplayService rejects the saved mode ("Invalid colorMode: 301") and system_server restarts. -->
+    <integer-array name="config_availableColorModes">
+        <item>0</item><item>1</item><item>3</item>
+        <item>256</item><item>257</item><item>258</item><item>259</item><item>260</item>
+        <item>261</item><item>262</item><item>263</item><item>264</item><item>265</item>
+        <item>301</item><item>302</item><item>303</item><item>304</item>
+        <item>305</item><item>306</item><item>307</item><item>308</item>
+    </integer-array>
+    <integer name="config_defaultRefreshRate">0</integer>
+
+    <!-- Xiaomi Mi 9 (cepheus): 1080 x 2340 AMOLED, waterdrop notch, one front light sensor. -->
+    <integer name="config_stableDeviceDisplayWidth">1080</integer>
+    <integer name="config_stableDeviceDisplayHeight">2340</integer>
+    <bool name="config_dualLightSensorSupport">false</bool>
+    <string name="config_mainDisplayLightSensorType" translatable="false">android.sensor.light</string>
+
+    <!-- Notch outline from the base ROM's device overlay (origin: top centre of the panel, pixels). -->
+    <string name="config_mainBuiltInDisplayCutout" translatable="false">M 96.00 0.00 C 85.46 0.97 73.83 3.18 66.54 11.54 C 58.13 21.04 57.46 34.46 51.13 45.11 C 41.62 62.37 22.93 73.78 3.33 75.00 L -2.45 75.00 C -24.41 74.56 -45.35 60.64 -54.50 40.43 C -59.86 30.02 -60.34 17.60 -69 9.56 C -76.11 2.71 -87.68 1.00 -96.00 0.00 L 96.00 0.00 Z</string>
+    <string name="config_mainBuiltInDisplayCutoutRectApproximation" translatable="false">M -96,0 L -96,75 L 96,75 L 96,0 Z</string>
+    <bool name="config_fillMainBuiltInDisplayCutout">true</bool>
+
+    <dimen name="rounded_corner_radius">60px</dimen>
+    <!-- Status bar: 84 px on the 1080-wide panel (notch is 75 px tall) at every ColorOS display-size step.
+         The donor overlay qualifies these by smallest width, so the same qualifiers are needed to win. -->
+    <dimen name="status_bar_height_portrait">28dp</dimen>
+    <dimen name="status_bar_height_landscape">28dp</dimen>
+</resources>

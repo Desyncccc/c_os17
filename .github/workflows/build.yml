@@ -1,0 +1,83 @@
+name: Build ColorOS 17 for cepheus
+
+# Manual only. The result is a complete firmware package built from third-party ROMs; in a public
+# repository a workflow artifact can be downloaded by any signed-in GitHub user while it is retained.
+on:
+  workflow_dispatch:
+    inputs:
+      fbe_mode:
+        description: "/data encryption: standard (plain AOSP FBE) or keep (base ROM's wrapped keys)"
+        type: choice
+        options: [standard, keep]
+        default: standard
+      soundtrigger:
+        description: "SoundTrigger HIDL service: remove or keep"
+        type: choice
+        options: [remove, keep]
+        default: remove
+      bootlog:
+        description: "Keep boot logs on the cache partition (1 = yes)"
+        type: choice
+        options: ["1", "0"]
+        default: "1"
+      retention_days:
+        description: "Days to keep the artifact"
+        type: number
+        default: 3
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h / /mnt 2>/dev/null || df -h /
+
+      - name: Pick the work directory with the most free space
+        run: |
+          best=$(df --output=avail,target / /mnt 2>/dev/null | tail -n +2 | sort -rn | head -1 | awk '{print $2}')
+          best=${best:-/}
+          sudo mkdir -p "${best%/}/port"
+          echo "PORT_DIR=${best%/}/port" >> "$GITHUB_ENV"
+
+      - name: Host tools
+        run: sudo ./setup.sh
+
+      - name: Build
+        run: |
+          sudo --preserve-env=FBE_MODE,SOUNDTRIGGER,BOOTLOG,SLIM \
+            WORK="$PORT_DIR/work" OUT="$PORT_DIR/out" ./port.sh
+        env:
+          FBE_MODE: ${{ inputs.fbe_mode }}
+          SOUNDTRIGGER: ${{ inputs.soundtrigger }}
+          BOOTLOG: ${{ inputs.bootlog }}
+          SLIM: "1"
+
+      - name: Summary
+        run: |
+          {
+            echo '### ColorOS 17 for cepheus'
+            echo '```'
+            cat "$PORT_DIR"/out/*.zip.sha256
+            ls -l "$PORT_DIR"/out/*.zip
+            echo '```'
+            echo 'Experimental and not device-tested. Read README.txt inside the package before flashing.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ColorOS17-cepheus
+          path: |
+            ${{ env.PORT_DIR }}/out/*.zip
+            ${{ env.PORT_DIR }}/out/*.zip.sha256
+          compression-level: 0
+          retention-days: ${{ inputs.retention_days }}
+          if-no-files-found: error
