@@ -17,7 +17,8 @@ bad()  { echo "  FAIL  $*"; fail=1; }
 check() { local desc=$1; shift; if "$@" > "$WORK/pf.log" 2>&1; then ok "$desc"; else bad "$desc"; sed 's/^/        /' "$WORK/pf.log" | tail -6; fi; }
 lab()  { getfattr -h -n security.selinux --only-values --absolute-names "$1" 2>/dev/null | tr -d '\0'; }
 
-cleanup() { for d in "$PS" "$PV" "$PO"; do mountpoint -q "$d" && umount "$d"; done; rm -f "$WORK/pf.log"; }
+PR=$WORK/mnt/prt
+cleanup() { for d in "$PR" "$PS" "$PV" "$PO"; do mountpoint -q "$d" && umount "$d"; done; rm -f "$WORK/pf.log" "$WORK/pf-runtime.img"; }
 trap cleanup EXIT
 mkdir -p "$PS" "$PV" "$PO"
 mount -t erofs -o ro,loop "$OUT/system.img" "$PS" && mount -t erofs -o ro,loop "$OUT/vendor.img" "$PV" \
@@ -62,6 +63,17 @@ dup = [k for k, n in seen.items() if n > 1]
 print(dup[:10]) if dup else None
 sys.exit(1 if dup else 0)
 PY
+
+echo "-- vendor HALs against the ColorOS system libraries"
+mkdir -p "$PR"
+unzip -p "$PS/system/apex/com.android.runtime.apex" apex_payload.img > "$WORK/pf-runtime.img" && mount -o ro,loop "$WORK/pf-runtime.img" "$PR" \
+  || bad "cannot mount ColorOS's runtime APEX payload"
+if $PY "$T/vendor_link_check.py" "$PV" "$PO" "$PS" "$H/base-llndk" "$PR" > "$WORK/pf.log" 2>&1; then
+  ok "$(head -1 "$WORK/pf.log"): $(tail -1 "$WORK/pf.log")"
+  grep '^  note:' "$WORK/pf.log" | sed 's/^  note:/        note:/'
+else
+  bad "vendor code cannot link against the ColorOS system"; sed 's/^/        /' "$WORK/pf.log" | tail -12
+fi
 
 echo "-- mounts: first-stage (boot ramdisk) and second-stage (vendor) fstab"
 b=$WORK/pf-boot; rm -rf "$b"; mkdir -p "$b"

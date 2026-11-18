@@ -49,7 +49,8 @@ Facts read from the images (see `port.sh unpack` and the analysis that led to th
   ColorOS never sends.
 - `CUST_LEVEL_LIST` exported from `init.environ.rc`, otherwise ColorOS ignores every `my_*` feature file.
 - `llndk.libraries.txt`: libraries the base ROM exposes to vendor code and ColorOS ships
-  (`libcamera_metadata.so`) are added so vendor HALs keep linking.
+  (`libcamera_metadata.so`, used by 61 vendor files) are added so vendor HALs keep linking. Preflight then
+  checks every vendor ELF file against ColorOS's libraries (`tools/vendor_link_check.py`).
 - `ro.oplus.storage.super_size` set and `supersize.rc` removed (its script can leave a value that crashes
   the wallpaper app).
 - OnePlus 15 hardware declarations removed or corrected: punch-hole position, QHD resolution switch,

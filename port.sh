@@ -105,6 +105,18 @@ stage_unpack() {
     cp "$M/bsys/system/apex/com.android.tethering.apex" "$H/tether-base.apex"
   fi
   unzip -p "$H/tether-base.apex" apex_payload.img > "$H/tether-base.img"; rm "$H/tether-base.apex"
+  # The base ROM's LLNDK libraries (what the vendor image was linked against), for tools/vendor_link_check.py.
+  local lib d
+  rm -rf "$H/base-llndk"; mkdir -p "$H/base-llndk/lib" "$H/base-llndk/lib64"
+  unzip -p "$M/bsys/system/apex/com.android.runtime.apex" apex_payload.img > "$H/runtime-base.img"
+  mnt "$H/runtime-base.img" "$M/brt"
+  for d in lib lib64; do
+    while read -r lib; do
+      if [ -f "$M/bsys/system/$d/$lib" ] && [ ! -L "$M/bsys/system/$d/$lib" ]; then cp "$M/bsys/system/$d/$lib" "$H/base-llndk/$d/"; fi
+    done < "$H/llndk.libraries.txt"
+    cp "$M/brt/$d/bionic/libc.so" "$M/brt/$d/bionic/libm.so" "$M/brt/$d/bionic/libdl.so" "$H/base-llndk/$d/"
+  done
+  umount "$M/brt"; rm -f "$H/runtime-base.img"
 
   # Writable trees. cp -a keeps owners, modes, symlinks and the security.* xattrs.
   rm -rf "$S" "$V" "$O"

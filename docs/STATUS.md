@@ -19,6 +19,9 @@ Every item is a check in `tools/preflight.sh` or `tools/verify_super.py` and run
 - The eight replaced network-stack binaries export the same symbols as the ones they cover and their new
   imports resolve against ColorOS's libraries.
 - The composer service differs from the original in exactly one instruction.
+- All 1,275 native files of the vendor and odm images find every system library and symbol they import in
+  ColorOS, compared with the base ROM they were built against (`tools/vendor_link_check.py`). Without the
+  `llndk.libraries.txt` fix, 61 of them (camera, among others) would lose `libcamera_metadata.so`.
 - The split super images reproduce every logical partition byte for byte and use the base ROM's geometry.
 
 ## Not verifiable without the phone
